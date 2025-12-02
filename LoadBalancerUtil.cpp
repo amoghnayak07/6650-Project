@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <thread>
-#include <select.h>
+#include <sys/select.h>
 
 LoadBalancerConnection::LoadBalancerConnection(int sock_fd, BackendFactory* factory)
     : socket_fd(sock_fd), backend(factory), buffer_size(4096) {}

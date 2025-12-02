@@ -249,7 +249,7 @@ void RobotFactory::AdminThread(int id)
 	}
 }
 
-void RobotFactory::AdminThread(int id)
+void RobotFactory::connectWithPeers()
 {
 	std::vector<std::thread> threads;
 	for (auto &peer : peer_list)
@@ -261,7 +261,7 @@ void RobotFactory::AdminThread(int id)
 		if (peer.primary_stub == nullptr)
 		{
 			peer.primary_stub = std::unique_ptr<PrimaryServerStub>(new PrimaryServerStub());
-			
+            
 			if(peer.primary_stub->Init(peer.info.ip, peer.info.port) == 0)
 			{
 				// std::cout << "Connection to peer " << peer.info.id << " failed." << std::endl;
