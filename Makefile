@@ -32,6 +32,9 @@ CMN_HDRS := $(filter-out $(SVR_HDRS) $(CLNT_HDRS), $(HDRS))
 CMN_SRCS := $(filter-out $(SVR_SRCS) $(CLNT_SRCS), $(SRCS))
 CMN_OBJS := $(CMN_SRCS:.cpp=.o)
 
+# LB files
+LB_SRCS := LBMain.cpp LoadBalancer.cpp
+LB_OBJS := $(LB_SRCS:.cpp=.o)
 
 # -Wall prints: all warnings
 # -std=c++11: use of C++11
@@ -41,7 +44,7 @@ CFLAGS := -Wall -std=c++11
 LFLAGS := -pthread 
 
 # we are building two target binaries: server and client
-TARGET := client server
+TARGET := client server load_balancer
 
 #-------------------------------------------------------------------------------
 # 2. What to build and how to build them
@@ -111,6 +114,14 @@ $(CLNT_OBJS): $(CLNT_SRCS) $(CLNT_HDRS)
 # This rule compiles the common source code into object files.
 $(CMN_OBJS): $(CMN_SRCS) $(CMN_HDRS)
 	$(CXX) $(CFLAGS) $(DFLAGS) -c $(CMN_SRCS)
+
+# Rule for load_balancer
+load_balancer: $(LB_OBJS) $(CMN_OBJS)
+	$(CXX) $(LFLAGS) -o $@ $^
+
+# Ensure LB objects compile correctly
+$(LB_OBJS): $(LB_SRCS)
+	$(CXX) $(CFLAGS) $(DFLAGS) -c $(LB_SRCS)
 
 # This defines how you will clean up the compiled files.
 # You can type "make clean" in the command line to delete all compiled files
