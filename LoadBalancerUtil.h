@@ -47,6 +47,7 @@ public:
     
     void AddFactory(const BackendFactory& factory);
     BackendFactory* GetNextFactory();
+    BackendFactory* GetRandomFactory();
     BackendFactory* GetPrimaryFactory();
     size_t GetFactoryCount() const { return factories.size(); }
 };

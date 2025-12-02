@@ -95,6 +95,7 @@ public:
 	enum Role {
 		CLIENT,
 		ADMIN,
+		STATE_QUERY,
 	} role;
 	
 	RoleIdentifier() : role(CLIENT) {}
@@ -155,6 +156,44 @@ public:
 	int GetCommittedIndex();
 
 	int Size();
+
+	void Marshal(char *buffer);
+	void Unmarshal(char *buffer);
+};
+
+class ServerStateQuery {
+private:
+	int query_type;  // 1 = "are you primary?"
+public:
+	ServerStateQuery() : query_type(1) {}
+	void SetQuery(int type) { query_type = type; }
+	int GetQuery() { return query_type; }
+
+	int Size() {
+		return sizeof(int);
+	}
+
+	void Marshal(char *buffer);
+	void Unmarshal(char *buffer);
+};
+
+class ServerStateResponse {
+private:
+	int factory_id;
+	int is_primary;  // 1 if primary, 0 if backup
+	int last_index;
+	int committed_index;
+public:
+	ServerStateResponse() : factory_id(-1), is_primary(0), last_index(0), committed_index(0) {}
+	void SetState(int fid, int is_prim, int lidx, int cidx);
+	int GetFactoryId() { return factory_id; }
+	int IsPrimary() { return is_primary; }
+	int GetLastIndex() { return last_index; }
+	int GetCommittedIndex() { return committed_index; }
+
+	int Size() {
+		return sizeof(int) * 4;
+	}
 
 	void Marshal(char *buffer);
 	void Unmarshal(char *buffer);

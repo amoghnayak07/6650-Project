@@ -15,7 +15,6 @@ int ClientSocket::Init(std::string ip, int port) {
 	struct sockaddr_in addr;
 	fd_ = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd_ < 0) {
-		// perror("ERROR: failed to create a socket");
 		return 0;
 	}
 
@@ -25,12 +24,11 @@ int ClientSocket::Init(std::string ip, int port) {
 	addr.sin_port = htons(port);
 
 	if ((connect(fd_, (struct sockaddr *) &addr, sizeof(addr))) < 0) {
-		// perror("ERROR: failed to connect");
 		return 0;
 	}
 	// Set reasonable send/recv timeouts so blocking operations fail fast
 	struct timeval tv;
-	tv.tv_sec = 3; // 3 seconds
+	tv.tv_sec = 3;
 	tv.tv_usec = 0;
 	setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 	setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));

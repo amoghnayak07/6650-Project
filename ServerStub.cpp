@@ -27,3 +27,18 @@ int ServerStub::ReturnRecord(CustomerInfo record) {
 	record.Marshal(buffer);
 	return socket->Send(buffer, record.Size(), 0);
 }
+
+ServerStateQuery ServerStub::ReceiveStateQuery() {
+	char buffer[32];
+	ServerStateQuery query;
+	if (socket->Recv(buffer, query.Size(), 0)) {
+		query.Unmarshal(buffer);
+	}
+	return query;
+}
+
+int ServerStub::SendStateResponse(ServerStateResponse response) {
+	char buffer[64];
+	response.Marshal(buffer);
+	return socket->Send(buffer, response.Size(), 0);
+}

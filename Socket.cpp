@@ -30,19 +30,11 @@ int Socket::Send(char *buffer, int size, int flags) {
 	while (size > 0) {
 		bytes_written = send(fd_, buffer + offset, size, flags);
 		if (bytes_written < 0) {
-			/*
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				perror("ERROR: send retry");
-				continue;
-			}
-			*/
-			// perror("ERROR: failed to send");
 			Close();
 			return 0;
 		}
 		size -= bytes_written;
 		offset += bytes_written;
-		assert(size >= 0);
 	}
 	return 1;
 }
@@ -53,21 +45,12 @@ int Socket::Recv(char *buffer, int size, int flags) {
 	while (size > 0) {
 		bytes_read = recv(fd_, buffer + offset, size, flags);
 		if (bytes_read <= 0) {
-			/*
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				//perror("ERROR: recv retry");
-				continue;
-			}
-			*/
-			// perror("ERROR: failed to recv");
 			Close();
 			return 0;
 		}
-		assert(bytes_read != 0);
 
 		size -= bytes_read;
 		offset += bytes_read;
-		assert(size >= 0);
 	}
 	return 1;
 }
@@ -90,7 +73,6 @@ bool Socket::IsNagleOn() {
 void Socket::Close() {
 	shutdown(fd_, SHUT_RDWR);
 	close(fd_);
-	//perror("Socket closed");
 	is_initialized_ = false;
 }
 

@@ -114,7 +114,7 @@ $(CLNT_OBJS): $(CLNT_SRCS) $(CLNT_HDRS)
 	
 
 # Build rule for loadbalancer
-loadbalancer: $(LB_OBJS)
+loadbalancer: $(LB_OBJS) $(CMN_OBJS)
 	$(CXX) $(LFLAGS) -o $@ $^
 
 $(LB_OBJS): $(LB_SRCS) $(LB_HDRS)
@@ -131,8 +131,13 @@ $(CMN_OBJS): $(CMN_SRCS) $(CMN_HDRS)
 clean:
 	rm -rf *.o *.wal *.log $(TARGET)
 
+# Build without persistence (WAL disabled) by defining NO_PERSISTENCE.
+# Usage: `make no_persistence`
+no_persistence: CFLAGS += -DNO_PERSISTENCE
+no_persistence: clean $(TARGET)
+
 # This indicates "clean" is not a target file to build but rather a
 # special command.
 
-.PHONY: clean debug
+.PHONY: clean debug no_persistence
 

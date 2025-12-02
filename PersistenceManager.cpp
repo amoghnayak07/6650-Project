@@ -8,15 +8,26 @@ PersistenceManager::PersistenceManager(int fact_id)
 }
 
 bool PersistenceManager::Open() {
+#ifdef NO_PERSISTENCE
+    // Persistence disabled at compile time: act as if WAL is ready
+    (void)filename;
+    return true;
+#else
     std::ofstream f(filename, std::ios::binary | std::ios::app);
     if (!f.is_open()) {
         std::cerr << "Failed to open WAL file: " << filename << std::endl;
         return false;
     }
     return true;
+#endif
 }
 
 bool PersistenceManager::AppendEntry(int index, const MapOp &op) {
+#ifdef NO_PERSISTENCE
+    // No-op when persistence disabled
+    (void)index; (void)op;
+    return true;
+#else
     std::ofstream f(filename, std::ios::binary | std::ios::app);
     if (!f.is_open()) {
         std::cerr << "Append failed: cannot open WAL file" << std::endl;
@@ -41,9 +52,15 @@ bool PersistenceManager::AppendEntry(int index, const MapOp &op) {
     f.flush();
 
     return true;
+#endif
 }
 
 bool PersistenceManager::LoadAll(std::vector<MapOp> &out_log) {
+#ifdef NO_PERSISTENCE
+    // Persistence disabled: nothing to load
+    (void)out_log;
+    return true;
+#else
     std::ifstream f(filename, std::ios::binary);
     if (!f.is_open()) {
         return true;
@@ -72,4 +89,5 @@ bool PersistenceManager::LoadAll(std::vector<MapOp> &out_log) {
         out_log.push_back(op);
     }
     return true;
+#endif
 }

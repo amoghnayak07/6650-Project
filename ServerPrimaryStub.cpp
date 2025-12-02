@@ -6,7 +6,7 @@ int PrimaryServerStub::Init(std::string ip, int port)
 {
     socket = std::unique_ptr<ClientSocket>(new ClientSocket());
     if (socket->Init(ip, port) == 0) {
-        return 0; // FAILED TO CONNECT
+        return 0; // Connection failed
     }
     RoleIdentifier r_id;
 
@@ -28,7 +28,7 @@ LatestState PrimaryServerStub::GetState()
     int size = state.Size();
 
     if (socket->Recv(buffer, size, 0) == 0) {
-        state.SetState(-2, -2); // This refers to failure
+        state.SetState(-2, -2); // Failure
         return state;
     }
 

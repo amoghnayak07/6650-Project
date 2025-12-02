@@ -1,4 +1,5 @@
 #include "LoadBalancerUtil.h"
+#include "Messages.h"
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -129,19 +130,79 @@ BackendFactory* RoundRobinRouter::GetNextFactory() {
     return factory;
 }
 
+BackendFactory* RoundRobinRouter::GetRandomFactory() {
+    std::lock_guard<std::mutex> lg(router_mutex);
+    if (factories.empty()) {
+        return nullptr;
+    }
+    size_t idx = static_cast<size_t>(rand()) % factories.size();
+    return &factories[idx];
+}
+
 BackendFactory* RoundRobinRouter::GetPrimaryFactory() {
     std::lock_guard<std::mutex> lg(router_mutex);
     if (factories.empty()) {
         return nullptr;
     }
     
-    // Primary is assumed to be the first factory (id 0)
+    // Query each factory to find which one is primary
     for (auto& factory : factories) {
-        if (factory.id == 0) {
-            return &factory;
+        int query_socket = socket(AF_INET, SOCK_STREAM, 0);
+        if (query_socket < 0) {
+            continue;
+        }
+
+        struct sockaddr_in server_addr;
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(factory.port);
+        memset(&server_addr.sin_zero, 0, sizeof(server_addr.sin_zero));
+
+        if (inet_pton(AF_INET, factory.ip.c_str(), &server_addr.sin_addr) <= 0) {
+            close(query_socket);
+            continue;
+        }
+
+        if (connect(query_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            close(query_socket);
+            continue;
+        }
+
+        // Send STATE_QUERY role identifier
+        RoleIdentifier idty;
+        idty.SetRole(RoleIdentifier::STATE_QUERY);
+        char buffer[4];
+        idty.Marshal(buffer);
+        if (send(query_socket, buffer, idty.Size(), 0) <= 0) {
+            close(query_socket);
+            continue;
+        }
+
+        // Send state query
+        ServerStateQuery query;
+        char query_buffer[4];
+        query.Marshal(query_buffer);
+        if (send(query_socket, query_buffer, query.Size(), 0) <= 0) {
+            close(query_socket);
+            continue;
+        }
+
+        // Receive state response
+        char response_buffer[64];
+        int n = recv(query_socket, response_buffer, sizeof(response_buffer), 0);
+        close(query_socket);
+
+        if (n > 0) {
+            ServerStateResponse response;
+            response.Unmarshal(response_buffer);
+            
+            if (response.IsPrimary()) {
+                std::cout << "Discovered primary: factory " << response.GetFactoryId() << std::endl;
+                return &factory;
+            }
         }
     }
     
-    // If no factory with id 0, return the first one
+    // Fallback: return first factory
+    std::cout << "Could not discover primary, using first factory" << std::endl;
     return &factories[0];
 }

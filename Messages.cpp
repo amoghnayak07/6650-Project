@@ -413,3 +413,63 @@ void LatestState::Unmarshal(char *buffer)
 	last_index = ntohl(net_last_index);
 	committed_index = ntohl(net_committed_index);
 }
+
+void ServerStateQuery::Marshal(char *buffer)
+{
+	int net_query_type = htonl(query_type);
+	memcpy(buffer, &net_query_type, sizeof(net_query_type));
+}
+
+void ServerStateQuery::Unmarshal(char *buffer)
+{
+	int net_query_type;
+	memcpy(&net_query_type, buffer, sizeof(net_query_type));
+	query_type = ntohl(net_query_type);
+}
+
+void ServerStateResponse::SetState(int fid, int is_prim, int lidx, int cidx)
+{
+	factory_id = fid;
+	is_primary = is_prim;
+	last_index = lidx;
+	committed_index = cidx;
+}
+
+void ServerStateResponse::Marshal(char *buffer)
+{
+	int net_factory_id = htonl(factory_id);
+	int net_is_primary = htonl(is_primary);
+	int net_last_index = htonl(last_index);
+	int net_committed_index = htonl(committed_index);
+	int offset = 0;
+
+	memcpy(buffer + offset, &net_factory_id, sizeof(net_factory_id));
+	offset += sizeof(net_factory_id);
+	memcpy(buffer + offset, &net_is_primary, sizeof(net_is_primary));
+	offset += sizeof(net_is_primary);
+	memcpy(buffer + offset, &net_last_index, sizeof(net_last_index));
+	offset += sizeof(net_last_index);
+	memcpy(buffer + offset, &net_committed_index, sizeof(net_committed_index));
+}
+
+void ServerStateResponse::Unmarshal(char *buffer)
+{
+	int net_factory_id;
+	int net_is_primary;
+	int net_last_index;
+	int net_committed_index;
+	int offset = 0;
+
+	memcpy(&net_factory_id, buffer + offset, sizeof(net_factory_id));
+	offset += sizeof(net_factory_id);
+	memcpy(&net_is_primary, buffer + offset, sizeof(net_is_primary));
+	offset += sizeof(net_is_primary);
+	memcpy(&net_last_index, buffer + offset, sizeof(net_last_index));
+	offset += sizeof(net_last_index);
+	memcpy(&net_committed_index, buffer + offset, sizeof(net_committed_index));
+
+	factory_id = ntohl(net_factory_id);
+	is_primary = ntohl(net_is_primary);
+	last_index = ntohl(net_last_index);
+	committed_index = ntohl(net_committed_index);
+}

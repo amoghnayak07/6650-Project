@@ -30,7 +30,7 @@ ReplicationRequest BackupServerStub::ReceiveReplicationInfo()
             request.SetMessage(-1, -1, -1, MapOp());
             return request;
         }
-        size -= size;
+        size = 0;
     }
 
     request.Unmarshal(buffer);

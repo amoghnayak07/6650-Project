@@ -21,12 +21,17 @@ private:
     RoundRobinRouter read_router;
     BackendFactory* primary_factory;
     bool running;
+    std::string read_policy; // "roundrobin" or "random"
     
 public:
-    LoadBalancer(int w_port, int r_port) 
+        LoadBalancer(int w_port, int r_port) 
         : write_port(w_port), read_port(r_port), 
           write_listen_socket(-1), read_listen_socket(-1),
-          primary_factory(nullptr), running(false) {}
+                    primary_factory(nullptr), running(false) {
+                const char* env = getenv("LB_READ_POLICY");
+                if (env && *env) read_policy = std::string(env);
+                if (read_policy.empty()) read_policy = "roundrobin";
+        }
     
     bool Initialize() {
         write_listen_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -78,7 +83,7 @@ public:
         
         std::cout << "Load Balancer initialized:" << std::endl;
         std::cout << "  Write port: " << write_port << " (primary-only)" << std::endl;
-        std::cout << "  Read port: " << read_port << " (round-robin)" << std::endl;
+        std::cout << "  Read port: " << read_port << " (policy: " << read_policy << ")" << std::endl;
         
         return true;
     }
@@ -86,61 +91,12 @@ public:
     void AddBackendFactory(int factory_id, const std::string& ip, int port) {
         BackendFactory factory(factory_id, ip, port);
         read_router.AddFactory(factory);
-        // Keep primary_factory pointing into the router's storage to avoid
-        // lifetime issues with local temporaries.
         primary_factory = read_router.GetPrimaryFactory();
     }
     
-    void ProxyBidirectional(int client_socket, int backend_socket) {
-        char buffer[4096];
-        fd_set readfds;
-        int max_fd = (client_socket > backend_socket) ? client_socket : backend_socket;
-        
-        bool client_open = true;
-        bool backend_open = true;
-        
-        while (client_open && backend_open) {
-            FD_ZERO(&readfds);
-            if (client_open) FD_SET(client_socket, &readfds);
-            if (backend_open) FD_SET(backend_socket, &readfds);
-            
-            int activity = select(max_fd + 1, &readfds, NULL, NULL, NULL);
-            
-            if (activity < 0) {
-                perror("select");
-                break;
-            }
-            
-            // Data from client to backend
-            if (client_open && FD_ISSET(client_socket, &readfds)) {
-                int n = recv(client_socket, buffer, sizeof(buffer), 0);
-                if (n <= 0) {
-                    client_open = false;
-                } else {
-                    if (send(backend_socket, buffer, n, 0) <= 0) {
-                        backend_open = false;
-                    }
-                }
-            }
-            
-            // Data from backend to client
-            if (backend_open && FD_ISSET(backend_socket, &readfds)) {
-                int n = recv(backend_socket, buffer, sizeof(buffer), 0);
-                if (n <= 0) {
-                    backend_open = false;
-                } else {
-                    if (send(client_socket, buffer, n, 0) <= 0) {
-                        client_open = false;
-                    }
-                }
-            }
-        }
-        
-        close(client_socket);
-        close(backend_socket);
-    }
-    
     void HandleWriteConnection(int client_socket) {
+        // Refresh primary on each write to handle failover/promotions
+        primary_factory = read_router.GetPrimaryFactory();
         if (!primary_factory) {
             std::cerr << "No primary factory available" << std::endl;
             close(client_socket);
@@ -149,14 +105,18 @@ public:
         LoadBalancerConnection conn(client_socket, primary_factory);
         if (!conn.ProxyConnection()) {
             std::cerr << "Failed to proxy write to primary factory " << primary_factory->id << std::endl;
-            // LoadBalancerConnection destructor will close sockets
             return;
         }
         std::cout << "Write request routed to primary factory " << primary_factory->id << std::endl;
     }
     
     void HandleReadConnection(int client_socket) {
-        BackendFactory* factory = read_router.GetNextFactory();
+        BackendFactory* factory = nullptr;
+        if (read_policy == "random") {
+            factory = read_router.GetRandomFactory();
+        } else {
+            factory = read_router.GetNextFactory();
+        }
         if (!factory) {
             std::cerr << "No backend factories available" << std::endl;
             close(client_socket);
@@ -167,7 +127,7 @@ public:
             std::cerr << "Failed to proxy read to factory " << factory->id << std::endl;
             return;
         }
-        std::cout << "Read request routed to factory " << factory->id << " (round-robin)" << std::endl;
+        std::cout << "Read request routed to factory " << factory->id << " (policy: " << read_policy << ")" << std::endl;
     }
     
     void WriteServerThread() {
@@ -222,8 +182,6 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-    // ./loadbalancer [write_port] [read_port] [# factories] 
-    //                (repeat [factory_id] [IP] [port])
     
     if (argc < 4 || argc < 4 + (atoi(argv[3]) * 3)) {
         std::cout << "Usage: " << argv[0] << " [write_port] [read_port] [# factories]" << std::endl;

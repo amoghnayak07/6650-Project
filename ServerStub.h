@@ -15,6 +15,8 @@ public:
 	CustomerRequest ReceiveRequest();
 	int ShipRobot(RobotInfo info);
 	int ReturnRecord(CustomerInfo record);
+	ServerStateQuery ReceiveStateQuery();
+	int SendStateResponse(ServerStateResponse response);
 };
 
 #endif // end of #ifndef __SERVER_STUB_H__
