@@ -65,3 +65,21 @@ MapOp StateMachine::FetchLog(int index)
 {
     return smr_log.FetchLog(index);
 }
+
+void StateMachine::ApplyUpTo(int index)
+{
+    for (int i = latest_index_stored + 1; i <= index; i++)
+    {
+        MapOp op = smr_log.FetchLog(i);
+        if (op.opcode == -1)  // Invalid operation
+        {
+            break;
+        }
+        ApplyOperation(op);
+    }
+}
+
+int StateMachine::GetLogSize()
+{
+    return smr_log.FetchLog(-1).opcode == -1 ? 0 : GetLastCommittedLogIndex() + 1;
+}

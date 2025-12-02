@@ -38,10 +38,12 @@ public:
     StateMachine();
     void AppendingOperation(const MapOp& op);
     void ApplyOperation(const MapOp& op);
+    void ApplyUpTo(int index);  // Apply operations up to specified index for recovery
 
     int GetCustomerRecord(int customer_id);
     int GetLastCommittedLogIndex();
     MapOp FetchLog(int index);
+    int GetLogSize();  // Get total size of replication log
 };
 
 

@@ -69,6 +69,11 @@ RobotFactory::RobotFactory(int fid, std::vector<PeerInfo> peers)
 		p.primary_stub = nullptr;
 		peer_list.push_back(std::move(p));
 	}
+	
+	// Initialize persistence manager and recover from WAL
+	persistence_mgr = std::unique_ptr<PersistenceManager>(new PersistenceManager(factory_id));
+	persistence_mgr->Open();
+	RecoverFromWAL();
 }
 
 void RobotFactory::handleReplicationRequest(std::unique_ptr<ServerSocket> socket)
@@ -162,6 +167,39 @@ void RobotFactory::handleClientRequest(std::unique_ptr<ServerSocket> socket, int
 	}
 }
 
+void RobotFactory::RecoverFromWAL()
+{
+	std::vector<MapOp> recovered_log;
+	if (!persistence_mgr->LoadAll(recovered_log))
+	{
+		std::cerr << "Failed to load WAL for factory " << factory_id << std::endl;
+		return;
+	}
+
+	if (recovered_log.empty())
+	{
+		std::cout << "Factory " << factory_id << " - No WAL entries to recover." << std::endl;
+		return;
+	}
+
+	std::cout << "Factory " << factory_id << " - Recovering from WAL with " << recovered_log.size() << " entries..." << std::endl;
+
+	// Reconstruct the log
+	for (const auto& op : recovered_log)
+	{
+		sm.AppendingOperation(op);
+		last_index++;
+	}
+
+	// Apply all operations to rebuild customer_record
+	if (last_index >= 0)
+	{
+		sm.ApplyUpTo(last_index);
+		committed_index = last_index;
+		std::cout << "Factory " << factory_id << " - Recovery complete. Last index: " << last_index << std::endl;
+	}
+}
+
 void RobotFactory::AdminThread(int id)
 {
 	std::unique_lock<std::mutex> ul(erq_lock, std::defer_lock);
@@ -199,6 +237,9 @@ void RobotFactory::AdminThread(int id)
 		sm.AppendingOperation(op);
 		last_index++;
 		
+		// Persist to WAL
+		persistence_mgr->AppendEntry(last_index, op);
+		
 		replicateToPeers(op);
 		sm.ApplyOperation(sm.FetchLog(last_index));
 		committed_index = last_index;
@@ -208,7 +249,7 @@ void RobotFactory::AdminThread(int id)
 	}
 }
 
-void RobotFactory::connectWithPeers()
+void RobotFactory::AdminThread(int id)
 {
 	std::vector<std::thread> threads;
 	for (auto &peer : peer_list)

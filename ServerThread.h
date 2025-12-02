@@ -12,6 +12,7 @@
 #include "StateMachine.h"
 #include "ServerBackupStub.h"
 #include "ServerPrimaryStub.h"
+#include "PersistenceManager.h"
 
 struct ExpertRequest
 {
@@ -40,6 +41,7 @@ private:
 	std::condition_variable erq_cv;
 
 	StateMachine sm;
+	std::unique_ptr<PersistenceManager> persistence_mgr;
 
 	int last_index;		  // the last index of the smr_log that has data
 	int committed_index;  // the last index of the smr_log where the
@@ -64,6 +66,7 @@ private:
 	void replicateToPeers(MapOp op);
 	void replicate(Peer &peer, const int cidx, const int lidx, const MapOp &op);
 	void replicateLogToPeer(Peer &peer);
+	void RecoverFromWAL();  // Recovery method
 
 public:
 	RobotFactory(int fid, std::vector<PeerInfo> peers);

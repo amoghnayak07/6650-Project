@@ -27,9 +27,14 @@ CLNT_HDRS := $(filter-out ClientSocket.h, $(wildcard Client*.h))
 CLNT_SRCS := $(filter-out ClientSocket.cpp, $(wildcard Client*.cpp))
 CLNT_OBJS := $(CLNT_SRCS:.cpp=.o)
 
+# LoadBalancer-specific files
+LB_HDRS := LoadBalancerUtil.h
+LB_SRCS := LoadBalancerMain.cpp LoadBalancerUtil.cpp
+LB_OBJS := $(LB_SRCS:.cpp=.o)
+
 # $(filter-out X Y Z, A) removes X Y and Z from A if X Y Z are found in A
-CMN_HDRS := $(filter-out $(SVR_HDRS) $(CLNT_HDRS), $(HDRS))
-CMN_SRCS := $(filter-out $(SVR_SRCS) $(CLNT_SRCS), $(SRCS))
+CMN_HDRS := $(filter-out $(SVR_HDRS) $(CLNT_HDRS) $(LB_HDRS), $(HDRS))
+CMN_SRCS := $(filter-out $(SVR_SRCS) $(CLNT_SRCS) $(LB_SRCS), $(SRCS))
 CMN_OBJS := $(CMN_SRCS:.cpp=.o)
 
 
@@ -40,8 +45,8 @@ CFLAGS := -Wall -std=c++11
 # -pthread: use of posix threads (necessary to use std::thread or pthreads)
 LFLAGS := -pthread 
 
-# we are building two target binaries: server and client
-TARGET := client server
+# we are building three target binaries: server, client, and loadbalancer
+TARGET := client server loadbalancer
 
 #-------------------------------------------------------------------------------
 # 2. What to build and how to build them
@@ -107,6 +112,13 @@ client: $(CLNT_OBJS) $(CMN_OBJS)
 $(CLNT_OBJS): $(CLNT_SRCS) $(CLNT_HDRS)
 	$(CXX) $(CFLAGS) $(DFLAGS) -c $(CLNT_SRCS)
 	
+
+# Build rule for loadbalancer
+loadbalancer: $(LB_OBJS)
+	$(CXX) $(LFLAGS) -o $@ $^
+
+$(LB_OBJS): $(LB_SRCS) $(LB_HDRS)
+	$(CXX) $(CFLAGS) $(DFLAGS) -c $(LB_SRCS)
 
 # This rule compiles the common source code into object files.
 $(CMN_OBJS): $(CMN_SRCS) $(CMN_HDRS)
