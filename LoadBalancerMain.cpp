@@ -86,13 +86,9 @@ public:
     void AddBackendFactory(int factory_id, const std::string& ip, int port) {
         BackendFactory factory(factory_id, ip, port);
         read_router.AddFactory(factory);
-        
-        if (factory_id == 0 || primary_factory == nullptr) {
-            // Store a copy for primary factory reference
-            static BackendFactory primary_copy(factory);
-            primary_factory = &primary_copy;
-            primary_copy = factory;
-        }
+        // Keep primary_factory pointing into the router's storage to avoid
+        // lifetime issues with local temporaries.
+        primary_factory = read_router.GetPrimaryFactory();
     }
     
     void ProxyBidirectional(int client_socket, int backend_socket) {
@@ -100,49 +96,47 @@ public:
         fd_set readfds;
         int max_fd = (client_socket > backend_socket) ? client_socket : backend_socket;
         
-        while (running) {
+        bool client_open = true;
+        bool backend_open = true;
+        
+        while (client_open && backend_open) {
             FD_ZERO(&readfds);
-            FD_SET(client_socket, &readfds);
-            FD_SET(backend_socket, &readfds);
+            if (client_open) FD_SET(client_socket, &readfds);
+            if (backend_open) FD_SET(backend_socket, &readfds);
             
-            struct timeval tv;
-            tv.tv_sec = 5;
-            tv.tv_usec = 0;
-            
-            int activity = select(max_fd + 1, &readfds, NULL, NULL, &tv);
+            int activity = select(max_fd + 1, &readfds, NULL, NULL, NULL);
             
             if (activity < 0) {
                 perror("select");
                 break;
             }
             
-            if (activity == 0) {
-                continue;  // Timeout, check again
-            }
-            
             // Data from client to backend
-            if (FD_ISSET(client_socket, &readfds)) {
+            if (client_open && FD_ISSET(client_socket, &readfds)) {
                 int n = recv(client_socket, buffer, sizeof(buffer), 0);
                 if (n <= 0) {
-                    break;  // Client disconnected
-                }
-                if (send(backend_socket, buffer, n, 0) <= 0) {
-                    break;  // Backend disconnected
+                    client_open = false;
+                } else {
+                    if (send(backend_socket, buffer, n, 0) <= 0) {
+                        backend_open = false;
+                    }
                 }
             }
             
             // Data from backend to client
-            if (FD_ISSET(backend_socket, &readfds)) {
+            if (backend_open && FD_ISSET(backend_socket, &readfds)) {
                 int n = recv(backend_socket, buffer, sizeof(buffer), 0);
                 if (n <= 0) {
-                    break;  // Backend disconnected
-                }
-                if (send(client_socket, buffer, n, 0) <= 0) {
-                    break;  // Client disconnected
+                    backend_open = false;
+                } else {
+                    if (send(client_socket, buffer, n, 0) <= 0) {
+                        client_open = false;
+                    }
                 }
             }
         }
         
+        close(client_socket);
         close(backend_socket);
     }
     
@@ -152,28 +146,13 @@ public:
             close(client_socket);
             return;
         }
-        
-        int backend_socket = socket(AF_INET, SOCK_STREAM, 0);
-        if (backend_socket < 0) {
-            std::cerr << "Failed to create backend socket" << std::endl;
-            close(client_socket);
+        LoadBalancerConnection conn(client_socket, primary_factory);
+        if (!conn.ProxyConnection()) {
+            std::cerr << "Failed to proxy write to primary factory " << primary_factory->id << std::endl;
+            // LoadBalancerConnection destructor will close sockets
             return;
         }
-        
-        struct sockaddr_in backend_addr;
-        backend_addr.sin_family = AF_INET;
-        backend_addr.sin_port = htons(primary_factory->port);
-        inet_pton(AF_INET, primary_factory->ip.c_str(), &backend_addr.sin_addr);
-        
-        if (connect(backend_socket, (struct sockaddr*)&backend_addr, sizeof(backend_addr)) < 0) {
-            std::cerr << "Failed to connect to primary factory " << primary_factory->id << std::endl;
-            close(backend_socket);
-            close(client_socket);
-            return;
-        }
-        
         std::cout << "Write request routed to primary factory " << primary_factory->id << std::endl;
-        ProxyBidirectional(client_socket, backend_socket);
     }
     
     void HandleReadConnection(int client_socket) {
@@ -183,28 +162,12 @@ public:
             close(client_socket);
             return;
         }
-        
-        int backend_socket = socket(AF_INET, SOCK_STREAM, 0);
-        if (backend_socket < 0) {
-            std::cerr << "Failed to create backend socket" << std::endl;
-            close(client_socket);
+        LoadBalancerConnection conn(client_socket, factory);
+        if (!conn.ProxyConnection()) {
+            std::cerr << "Failed to proxy read to factory " << factory->id << std::endl;
             return;
         }
-        
-        struct sockaddr_in backend_addr;
-        backend_addr.sin_family = AF_INET;
-        backend_addr.sin_port = htons(factory->port);
-        inet_pton(AF_INET, factory->ip.c_str(), &backend_addr.sin_addr);
-        
-        if (connect(backend_socket, (struct sockaddr*)&backend_addr, sizeof(backend_addr)) < 0) {
-            std::cerr << "Failed to connect to factory " << factory->id << std::endl;
-            close(backend_socket);
-            close(client_socket);
-            return;
-        }
-        
         std::cout << "Read request routed to factory " << factory->id << " (round-robin)" << std::endl;
-        ProxyBidirectional(client_socket, backend_socket);
     }
     
     void WriteServerThread() {

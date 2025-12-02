@@ -318,22 +318,56 @@ bool ReplicationResponse::IsSuccess()
 	return success;
 }
 
+void ReplicationResponse::SetMapOp(const MapOp &mop)
+{
+	op = mop;
+}
+
+MapOp ReplicationResponse::GetMapOp()
+{
+	return op;
+}
+
 int ReplicationResponse::Size()
 {
-	return sizeof(int);
+	return sizeof(int) + sizeof(op);
 }
 
 void ReplicationResponse::Marshal(char *buffer)
 {
 	int net_success = htonl(success ? 1 : 0);
-	memcpy(buffer, &net_success, sizeof(net_success));
+	int net_opcode = htonl(op.opcode);
+	int net_arg1 = htonl(op.arg1);
+	int net_arg2 = htonl(op.arg2);
+	int offset = 0;
+	memcpy(buffer + offset, &net_success, sizeof(net_success));
+	offset += sizeof(net_success);
+	memcpy(buffer + offset, &net_opcode, sizeof(net_opcode));
+	offset += sizeof(net_opcode);
+	memcpy(buffer + offset, &net_arg1, sizeof(net_arg1));
+	offset += sizeof(net_arg1);
+	memcpy(buffer + offset, &net_arg2, sizeof(net_arg2));
 }
 
 void ReplicationResponse::Unmarshal(char *buffer)
 {
 	int net_success;
-	memcpy(&net_success, buffer, sizeof(net_success));
+	int net_opcode;
+	int net_arg1;
+	int net_arg2;
+	int offset = 0;
+	memcpy(&net_success, buffer + offset, sizeof(net_success));
+	offset += sizeof(net_success);
+	memcpy(&net_opcode, buffer + offset, sizeof(net_opcode));
+	offset += sizeof(net_opcode);
+	memcpy(&net_arg1, buffer + offset, sizeof(net_arg1));
+	offset += sizeof(net_arg1);
+	memcpy(&net_arg2, buffer + offset, sizeof(net_arg2));
+
 	success = (ntohl(net_success) != 0);
+	op.opcode = ntohl(net_opcode);
+	op.arg1 = ntohl(net_arg1);
+	op.arg2 = ntohl(net_arg2);
 }
 
 LatestState::LatestState()

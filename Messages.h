@@ -131,10 +131,13 @@ public:
 class ReplicationResponse {
 private:
 	bool success;
+	MapOp op;
 public:
 	ReplicationResponse();
 	void SetResponse(bool succ);
 	bool IsSuccess();
+	void SetMapOp(const MapOp &mop);
+	MapOp GetMapOp();
 
 	int Size();
 	void Marshal(char *buffer);

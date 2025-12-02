@@ -67,6 +67,7 @@ private:
 	void replicate(Peer &peer, const int cidx, const int lidx, const MapOp &op);
 	void replicateLogToPeer(Peer &peer);
 	void RecoverFromWAL();  // Recovery method
+	void FetchMissingLogEntries();  // Fetch missing entries from primary after WAL recovery
 
 public:
 	RobotFactory(int fid, std::vector<PeerInfo> peers);

@@ -7,13 +7,6 @@
 - Make utility
 - Standard UNIX tools (netstat, sleep, pkill optional)
 
-## Build
-
-```bash
-cd "PA3 directory"
-make all          # Builds: server, client, loadbalancer
-```
-
 ## Quick Demo Setup (3 Factories + Load Balancer)
 
 ### Terminal 1 - Start Primary Factory

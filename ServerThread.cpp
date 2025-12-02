@@ -74,6 +74,12 @@ RobotFactory::RobotFactory(int fid, std::vector<PeerInfo> peers)
 	persistence_mgr = std::unique_ptr<PersistenceManager>(new PersistenceManager(factory_id));
 	persistence_mgr->Open();
 	RecoverFromWAL();
+	
+	// After recovery, connect to peers to fetch any missing data
+	connectWithPeers();
+
+	// After connecting to peers, attempt to fetch missing entries (if any)
+	FetchMissingLogEntries();
 }
 
 void RobotFactory::handleReplicationRequest(std::unique_ptr<ServerSocket> socket)
@@ -119,6 +125,23 @@ void RobotFactory::handleReplicationRequest(std::unique_ptr<ServerSocket> socket
 			thread_primary_id = request.GetFactoryId();
 			std::cout << "Factory " << primary_id << " is the primary." << std::endl;
 		}
+		// If the request op has opcode -1, treat it as a fetch request for log entry at GetLastIndex()
+		if (request.GetMapOp().opcode == -1) {
+			int fetch_idx = request.GetLastIndex();
+			if (fetch_idx >= 0 && fetch_idx <= last_index) {
+				MapOp fetched = sm.FetchLog(fetch_idx);
+				ReplicationResponse response;
+				response.SetResponse(true);
+				response.SetMapOp(fetched);
+				stub->SendReplicationInfo(response);
+			} else {
+				ReplicationResponse response;
+				response.SetResponse(false);
+				stub->SendReplicationInfo(response);
+			}
+			continue; // continue listening for normal replication operations
+		}
+		
 		sm.AppendingOperation(request.GetMapOp());
 		last_index++;
 		sm.ApplyOperation(sm.FetchLog(request.GetCommittedIndex()));
@@ -179,25 +202,29 @@ void RobotFactory::RecoverFromWAL()
 	if (recovered_log.empty())
 	{
 		std::cout << "Factory " << factory_id << " - No WAL entries to recover." << std::endl;
-		return;
 	}
-
-	std::cout << "Factory " << factory_id << " - Recovering from WAL with " << recovered_log.size() << " entries..." << std::endl;
-
-	// Reconstruct the log
-	for (const auto& op : recovered_log)
+	else
 	{
-		sm.AppendingOperation(op);
-		last_index++;
-	}
+		std::cout << "Factory " << factory_id << " - Recovering from WAL with " << recovered_log.size() << " entries..." << std::endl;
 
-	// Apply all operations to rebuild customer_record
-	if (last_index >= 0)
-	{
-		sm.ApplyUpTo(last_index);
-		committed_index = last_index;
-		std::cout << "Factory " << factory_id << " - Recovery complete. Last index: " << last_index << std::endl;
+		// Reconstruct the log
+		for (const auto& op : recovered_log)
+		{
+			sm.AppendingOperation(op);
+			last_index++;
+		}
+
+		// Apply all operations to rebuild customer_record
+		if (last_index >= 0)
+		{
+			sm.ApplyUpTo(last_index);
+			committed_index = last_index;
+			std::cout << "Factory " << factory_id << " - Recovery complete. Last index: " << last_index << std::endl;
+		}
 	}
+	
+	// Fetching missing entries will be attempted after peer connections
+	// (invoked from constructor after connectWithPeers()).
 }
 
 void RobotFactory::AdminThread(int id)
@@ -231,6 +258,14 @@ void RobotFactory::AdminThread(int id)
 
 		if (connected_peers < peer_list.size()) {
 			connectWithPeers();
+			// After connecting to new peers, send them the current log
+			for (auto &peer : peer_list)
+			{
+				if (peer.info.id != factory_id && peer.primary_stub != nullptr)
+				{
+					replicateLogToPeer(peer);
+				}
+			}
 		}
 		
 		MapOp op{1, req->robot.GetCustomerId(), sm.GetCustomerRecord(req->robot.GetCustomerId()) + 1};
@@ -271,15 +306,10 @@ void RobotFactory::connectWithPeers()
 			{
 				// std::cout << "Connected to peer " << peer.info.id << "." << std::endl;
 				connected_peers++;
-				if(last_index >=0) {
-					threads.emplace_back(&RobotFactory::replicateLogToPeer, this, std::ref(peer));
-				}
+				// Note: After connecting, the primary will proactively send log entries
+				// through handleReplicationRequest() on its side
 			}
 		}
-	}
-	for (auto &t : threads)
-	{
-		t.join();
 	}
 }
 
@@ -346,5 +376,99 @@ void RobotFactory::replicate(Peer &peer, const int Cidx, const int Lidx, const M
 		// std::cout << "Replication to peer failed." << std::endl;
 		peer.primary_stub = nullptr;
 		connected_peers--;
+	}
+}
+
+void RobotFactory::FetchMissingLogEntries()
+{
+	std::lock_guard<std::mutex> rlock(replication_lock);
+	
+	// If this node is the primary or has no connected peers, nothing to fetch
+	if (factory_id == primary_id || connected_peers == 0)
+	{
+		return;
+	}
+	
+	// Find a connected peer to fetch from (preferably the primary)
+	Peer* fetch_peer = nullptr;
+	
+	// First, try to find the primary
+	for (auto &peer : peer_list)
+	{
+		if (peer.info.id == primary_id && peer.primary_stub != nullptr)
+		{
+			fetch_peer = &peer;
+			break;
+		}
+	}
+	
+	// If primary not found, use any connected peer
+	if (fetch_peer == nullptr)
+	{
+		for (auto &peer : peer_list)
+		{
+			if (peer.primary_stub != nullptr)
+			{
+				fetch_peer = &peer;
+				break;
+			}
+		}
+	}
+	
+	if (fetch_peer == nullptr)
+	{
+		// std::cout << "Factory " << factory_id << " - No peer available to fetch missing entries." << std::endl;
+		return;
+	}
+	
+	// Get the peer's current state
+	LatestState peer_state = fetch_peer->primary_stub->GetState();
+	int peer_last_index = peer_state.GetLastIndex();
+	
+	// If peer has no more entries than us, we're up to date
+	if (peer_last_index <= last_index)
+	{
+		std::cout << "Factory " << factory_id << " - Already synchronized. Last index: " << last_index 
+		          << ", Peer last index: " << peer_last_index << std::endl;
+		return;
+	}
+	
+	std::cout << "Factory " << factory_id << " - Fetching missing entries from factory " << fetch_peer->info.id 
+	          << " (from index " << (last_index + 1) << " to " << peer_last_index << ")." << std::endl;
+	
+	// Fetch missing entries from (last_index + 1) up to peer's last_index
+	int start_index = last_index + 1;
+	int fetch_count = 0;
+	
+	for (int idx = start_index; idx <= peer_last_index; idx++)
+	{
+		// Request the entry at idx from the peer using fetch semantics (opcode = -1)
+		MapOp fetch_req_op;
+		fetch_req_op.opcode = -1; // special fetch opcode
+		ReplicationRequest msg;
+		msg.SetMessage(factory_id, last_index, idx, fetch_req_op);
+
+		ReplicationResponse resp = fetch_peer->primary_stub->Replicate(msg);
+		if (!resp.IsSuccess())
+		{
+			std::cout << "Factory " << factory_id << " - Failed to fetch entry at index " << idx << std::endl;
+			break;
+		}
+		// Extract fetched op and apply/persist it locally
+		MapOp fetched = resp.GetMapOp();
+		// Append to local SM log and persist to WAL
+		sm.AppendingOperation(fetched);
+		last_index++;
+		persistence_mgr->AppendEntry(last_index, fetched);
+		// Apply operation locally
+		sm.ApplyOperation(sm.FetchLog(last_index));
+		committed_index = last_index;
+		fetch_count++;
+	}
+	
+	if (fetch_count > 0)
+	{
+		std::cout << "Factory " << factory_id << " - Successfully fetched " << fetch_count 
+		          << " missing entries. New last index: " << last_index << std::endl;
 	}
 }

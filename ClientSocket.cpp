@@ -28,6 +28,12 @@ int ClientSocket::Init(std::string ip, int port) {
 		// perror("ERROR: failed to connect");
 		return 0;
 	}
+	// Set reasonable send/recv timeouts so blocking operations fail fast
+	struct timeval tv;
+	tv.tv_sec = 3; // 3 seconds
+	tv.tv_usec = 0;
+	setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+	setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
 	is_initialized_ = true;
 	return 1;
 }

@@ -22,6 +22,7 @@ private:
     int socket_fd;
     BackendFactory* backend;
     int buffer_size;
+    int backend_socket_fd;
     
 public:
     LoadBalancerConnection(int sock_fd, BackendFactory* factory);
@@ -32,6 +33,7 @@ public:
     bool Forward();
     BackendFactory* GetBackend() const { return backend; }
     int GetSocketFd() const { return socket_fd; }
+    int GetBackendSocketFd() const { return backend_socket_fd; }
 };
 
 class RoundRobinRouter {

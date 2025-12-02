@@ -32,6 +32,13 @@ bool ServerSocket::Init(int port) {
 	addr.sin_addr.s_addr = INADDR_ANY;
 	addr.sin_port = htons(port);
 
+	// allow immediate reuse of the address/port after process exit
+	int opt = 1;
+	if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+		perror("ERROR: setsockopt SO_REUSEADDR failed");
+		// continue, bind may still work
+	}
+
 	if ((bind(fd_, (struct sockaddr *) &addr, sizeof(addr))) < 0) {
 		perror("ERROR: failed to bind");
 		return false;
