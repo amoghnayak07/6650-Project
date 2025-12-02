@@ -12,6 +12,7 @@
 #include "StateMachine.h"
 #include "ServerBackupStub.h"
 #include "ServerPrimaryStub.h"
+#include "PersistenceManager.h"
 
 struct ExpertRequest
 {
@@ -50,6 +51,8 @@ private:
 	const int factory_id; // the id of the factory. This is assigned via
 						  // the command line arguments.
 
+	PersistenceManager* pm; 
+
 	std::vector<Peer> peer_list;
 	long unsigned int connected_peers = 0;
 
@@ -66,7 +69,7 @@ private:
 	void replicateLogToPeer(Peer &peer);
 
 public:
-	RobotFactory(int fid, std::vector<PeerInfo> peers);
+	RobotFactory(int fid, std::vector<PeerInfo> peers, PersistenceManager* pm, std::vector<MapOp> recovered_log);
 	void EngineerThread(std::unique_ptr<ServerSocket> socket, int id);
 	void AdminThread(int id);
 };

@@ -6,6 +6,7 @@
 
 #include "ServerSocket.h"
 #include "ServerThread.h"
+#include "PersistenceManager.h"
 
 int main(int argc, char *argv[])
 {
@@ -40,9 +41,21 @@ int main(int argc, char *argv[])
 	for(const auto& peer : peer_list) {
 		std::cout << "Peer ID: " << peer.id << ", IP: " << peer.ip << ", Port: " << peer.port << std::endl;
 	}
+	
+	PersistenceManager pm(unique_id);
+	std::vector<MapOp> recovered_log;
+	if (!pm.Open()) {
+		std::cout << "Warning: Failed to open WAL file." << std::endl;
+	} else {
+		pm.LoadAll(recovered_log);
+		std::cout << "Recovered " << recovered_log.size() << " entries from WAL." << std::endl;
+	}
+
 	int engineer_cnt = 0;
 	ServerSocket socket;
-	RobotFactory factory(unique_id, peer_list);
+	
+	RobotFactory factory(unique_id, peer_list, &pm, recovered_log);
+
 	std::unique_ptr<ServerSocket> new_socket;
 	std::vector<std::thread> thread_vector;
 

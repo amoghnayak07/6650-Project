@@ -59,8 +59,8 @@ void RobotFactory::EngineerThread(std::unique_ptr<ServerSocket> socket, int id)
 	}
 }
 
-RobotFactory::RobotFactory(int fid, std::vector<PeerInfo> peers)
-	: last_index(-1), committed_index(-1), primary_id(-1), factory_id(fid)
+RobotFactory::RobotFactory(int fid, std::vector<PeerInfo> peers, PersistenceManager* pers_man, std::vector<MapOp> recovered_log)
+	: last_index(-1), committed_index(-1), primary_id(-1), factory_id(fid), pm(pers_man)
 {
 	for (const auto &peer : peers)
 	{
@@ -68,6 +68,13 @@ RobotFactory::RobotFactory(int fid, std::vector<PeerInfo> peers)
 		p.info = peer;
 		p.primary_stub = nullptr;
 		peer_list.push_back(std::move(p));
+	}
+
+	for (const auto& op : recovered_log) {
+		sm.AppendingOperation(op);
+		last_index++;
+		sm.ApplyOperation(op); 
+		committed_index = last_index;
 	}
 }
 
@@ -116,6 +123,11 @@ void RobotFactory::handleReplicationRequest(std::unique_ptr<ServerSocket> socket
 		}
 		sm.AppendingOperation(request.GetMapOp());
 		last_index++;
+
+		if (pm) {
+			pm->AppendEntry(last_index, request.GetMapOp());
+		}
+
 		sm.ApplyOperation(sm.FetchLog(request.GetCommittedIndex()));
 		committed_index = request.GetCommittedIndex();
 		ReplicationResponse response;
@@ -199,6 +211,10 @@ void RobotFactory::AdminThread(int id)
 		sm.AppendingOperation(op);
 		last_index++;
 		
+		if (pm) {
+			pm->AppendEntry(last_index, op);
+		}
+
 		replicateToPeers(op);
 		sm.ApplyOperation(sm.FetchLog(last_index));
 		committed_index = last_index;
